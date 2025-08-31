@@ -3,7 +3,7 @@ import Navbar from "./components/Navbar";
 import Home from "./pages/Home";
 import About from "./pages/About";
 import NotFound from "./pages/NotFound";
-import LcgPage from "./modules/lcg/LcgPage";
+import LcgPage from "./modules/lcg/LcgPage.jsx";
 
 export default function App() {
   return (
