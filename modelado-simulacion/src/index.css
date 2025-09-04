@@ -74,3 +74,47 @@ button:focus-visible{ outline: 3px solid #60a5fa; outline-offset: 2px; }
     --link-hover: #1d4ed8;
   }
 }
+/* Tarjeta */
+.card{
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.15);
+}
+
+/* Botones como links */
+.btn{
+  display: inline-block;
+  padding: .65em 1.1em;
+  border-radius: 10px;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.15);
+  color: var(--text);
+  text-decoration: none;
+  transition: transform .15s ease, background .15s ease, border-color .15s ease;
+}
+.btn:hover{ background: rgba(255,255,255,.2); transform: translateY(-1px); }
+.btn--alt{ background: rgba(99,102,241,.25); border-color: rgba(99,102,241,.45); }
+.btn-row{ display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* Formularios grid */
+.grid-form{
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 12px;
+}
+.grid-form label{
+  display: grid; gap: 6px; font-size: .95rem;
+}
+.grid-form input{
+  width: 100%; padding: 8px 10px;
+  border-radius: 10px; border: 1px solid rgba(255,255,255,.15);
+  background: rgba(255,255,255,.06); color: var(--text);
+}
+.grid-2{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+.alert{ margin-top: 12px; color: #fca5a5; }
+@media (max-width: 900px){
+  .grid-form{ grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+  .grid-2{ grid-template-columns: 1fr; }
+}
