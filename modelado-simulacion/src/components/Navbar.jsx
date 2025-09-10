@@ -33,8 +33,6 @@ export default function Navbar() {
         <ul className={`nav__links ${open ? "is-open" : ""}`}>
           <li><NavLink to="/" className={linkClass} end>Inicio</NavLink></li>
           <li><NavLink to="/modulos/lcg" className={linkClass}>Generador LCG</NavLink></li>
-          <li><NavLink to="/modulos/varianza" className={linkClass}>Varianza (próx.)</NavLink></li>
-          <li><NavLink to="/modulos/colas" className={linkClass}>Colas (próx.)</NavLink></li>
           <li className="nav__spacer" />
           <li><NavLink to="/about" className={linkClass}>Acerca de</NavLink></li>
         </ul>
