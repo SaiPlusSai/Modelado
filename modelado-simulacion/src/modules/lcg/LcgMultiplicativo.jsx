@@ -132,17 +132,18 @@ export default function LcgMultiplicativo() {
     }
 
     // seed (validamos cuando hay M)
-    let S = NaN;
-    if (!Number.isNaN(M) && fields.seed !== "") {
-      if (isDigits(fields.seed)) {
-        S = Number(fields.seed);
-        if (!isInt(S) || S <= 0 || S >= M) {
-          errors.push(`seed (x₀) debe estar en [1, ${isNaN(M) ? "m-1" : M - 1}].`);
-        } else if (S % 2 === 0) {
-          errors.push("seed (x₀) debe ser IMPAR con m = 2^g.");
-        }
-      }
+    // seed: solo validamos que sea impar
+let S = NaN;
+if (fields.seed !== "") {
+  if (isDigits(fields.seed)) {
+    S = Number(fields.seed);
+    if (!isInt(S)) {
+      errors.push("seed (x₀) debe ser un entero.");
+    } else if (S % 2 === 0) {
+      errors.push("seed (x₀) debe ser IMPAR.");
     }
+  }
+}
 
     // Tips de período (si está todo listo)
     if (![A, M, S, D].some(Number.isNaN)) {
