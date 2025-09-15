@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /** -------------------- Utils -------------------- */
 const isInt = (v) => Number.isInteger(v);
@@ -13,11 +13,10 @@ function primeFactors(n) {
   return [...fs];
 }
 const isPowerOfTwo = (m) => m > 0 && (m & (m - 1)) === 0;
-
-/** ---- helper: Ui = Xi / (m-1) con decimales ---- */
+/** r_i = X_i / (m-1) */
 const ui = (x, m, decimals = 0) => (x / (m - 1)).toFixed(decimals);
 
-/** -------------------- Generador (ADITIVO) -------------------- */
+/** -------------------- Motor (ADITIVO) -------------------- */
 function generateFullPeriodAditivo({ a, c, m, seed }) {
   const raw = [seed];
   const rows = [];
@@ -33,11 +32,11 @@ function generateFullPeriodAditivo({ a, c, m, seed }) {
     rows.push({
       i,
       prev: x,
-      opText: `(${a} * ${x} + ${c}) mod ${m}`,
+      opText: `(${a} × ${x} + ${c}) mod ${m}`,
       opNoMod,
       m,
       xi,
-      explanation: "Multiplico Xi-1 por a, sumo c y reduzco módulo m.",
+      explanation: "Multiplico Xᵢ₋₁ por a, sumo c y reduzco módulo m."
     });
     raw.push(xi);
 
@@ -49,6 +48,81 @@ function generateFullPeriodAditivo({ a, c, m, seed }) {
   return { raw, rows, period, m };
 }
 
+/** -------------------- Input numérico con buffer -------------------- */
+/* Mantiene texto local mientras tipeás y solo “confirma” al hacer blur o Enter.
+   Así evitamos que un re-render te quite el foco. */
+function BufferedNumericInput({
+  name,
+  value,                // string del estado global
+  onCommit,             // (str) => void  -> actualiza el estado global
+  allowEmpty = true,
+  ...rest
+}) {
+  const [text, setText] = useState(value ?? "");
+  const ref = useRef(null);
+
+  // Sincroniza si el valor externo cambia desde fuera (ej. limpiar formulario)
+  useEffect(() => {
+    if (value !== text) setText(value ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  // bloquea rueda del mouse (evita cambios raros)
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      if (document.activeElement === el) e.preventDefault();
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const commit = () => {
+    // si allowEmpty y está vacío, confirmamos vacío; si no, confirmamos números
+    if (text === "" && allowEmpty) return onCommit("");
+    if (/^[0-9]+$/.test(text)) return onCommit(text);
+    // si metió algo no numérico, no confirmamos (mantiene foco)
+  };
+
+  return (
+    <input
+      ref={ref}
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      autoComplete="off"
+      autoCorrect="off"
+      spellCheck={false}
+      name={name}
+      value={text}
+      onChange={(e) => {
+        const v = e.target.value;
+        // Permitimos vacío o solo dígitos (no forzamos commit aún)
+        if (v === "" || /^[0-9]+$/.test(v)) setText(v);
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commit();
+          // mantener foco tras enter
+          setTimeout(() => ref.current?.focus(), 0);
+        }
+      }}
+      {...rest}
+      style={{
+        width: "100%",
+        border: "1px solid #e5e7eb",
+        borderRadius: 10,
+        padding: "10px 12px",
+        outline: "none",
+        ...(rest.style || {})
+      }}
+    />
+  );
+}
+
 /** -------------------- Componente -------------------- */
 export default function LcgAditivo() {
   /**
@@ -58,7 +132,6 @@ export default function LcgAditivo() {
   const [modeA, setModeA] = useState(0);
   const [modeM, setModeM] = useState(0);
 
-  // Campos como string para permitir vacío
   const [fields, setFields] = useState({
     a: "", k: "",
     c: "",
@@ -67,12 +140,10 @@ export default function LcgAditivo() {
     decimals: ""
   });
 
-  const onField = (e) => {
-    const { name, value } = e.target;
-    setFields((p) => ({ ...p, [name]: value }));
-  };
+  const commitField = (name, val) =>
+    setFields((p) => ({ ...p, [name]: val }));
 
-  // Derivados: a, m, g según modos (y validaciones)
+  /** ---------- Derivados + validaciones (manteniendo reglas, seed > 0) ---------- */
   const derived = useMemo(() => {
     const errors = [];
     const hints = [];
@@ -83,7 +154,7 @@ export default function LcgAditivo() {
       errors.push("decimales debe ser entero entre 0 y 10.");
     }
 
-    // a via modo
+    // a (directo o via k)
     let A = NaN;
     if (modeA === 0) {
       if (fields.a !== "") {
@@ -101,10 +172,9 @@ export default function LcgAditivo() {
       }
     }
 
-    // m/g/p via modo
+    // m/g/p
     let M = NaN, G = NaN;
     if (modeM === 0) {
-      // g → m = 2^g
       if (fields.g !== "") {
         G = Number(fields.g);
         if (!isInt(G) || G < 2 || G > 31) {
@@ -114,7 +184,6 @@ export default function LcgAditivo() {
         }
       }
     } else if (modeM === 1) {
-      // m directo → g = log2(m)
       if (fields.m !== "") {
         M = Number(fields.m);
         if (!isInt(M) || M <= 1) {
@@ -126,7 +195,6 @@ export default function LcgAditivo() {
         }
       }
     } else {
-      // p → g = log(p)/log(2), m = 2^g
       if (fields.p !== "") {
         const P = Number(fields.p);
         if (!isInt(P) || P <= 1) {
@@ -135,30 +203,27 @@ export default function LcgAditivo() {
           errors.push("p debe ser potencia de 2 (para que g sea entero).");
         } else {
           G = Math.round(Math.log(P) / Math.log(2));
-          M = 2 ** G; // con p potencia de 2, coincide
+          M = 2 ** G;
         }
       }
     }
 
-    // c y seed (dependen de M)
+    // c y seed (> 0, sin depender de m)
     let C = NaN, S = NaN;
     if (fields.c !== "") {
       C = Number(fields.c);
       if (!isInt(C) || C <= 0) errors.push("c debe ser entero positivo (> 0).");
     }
-    if (!Number.isNaN(M) && fields.seed !== "") {
+    if (fields.seed !== "") {
       S = Number(fields.seed);
-      if (!isInt(S) || S < 0 || S >= M) {
-        errors.push(`seed (x₀) debe ser entero en [0, ${isNaN(M) ? "m-1" : M - 1}].`);
+      if (!isInt(S) || S <= 0) {
+        errors.push("seed (X₀) debe ser un entero > 0.");
       }
     }
 
-    // Reglas obligatorias cuando ya están todos
+    // Sugerencias Hull–Dobell (hints)
     if (![A, C, M, S].some(Number.isNaN)) {
-      // c coprimo con m (obligatorio)
       if (gcd(C, M) !== 1) errors.push("gcd(c, m) debe ser 1 (c debe ser coprimo con m).");
-
-      // Hull–Dobell (sugerencias)
       const ps = primeFactors(M);
       for (const p of ps) {
         if ((A - 1) % p !== 0) { hints.push(`Sugerencia: (a - 1) múltiplo de ${p} (primo de m).`); break; }
@@ -173,11 +238,15 @@ export default function LcgAditivo() {
     };
   }, [fields, modeA, modeM]);
 
-  // Generar en tiempo real cuando ready
+  /** ---------- Generación en vivo + último buen resultado ---------- */
   const [gen, setGen] = useState(null);
+  const [lastGoodGen, setLastGoodGen] = useState(null);
+
   useEffect(() => {
     if (derived.ready) {
-      setGen(generateFullPeriodAditivo({ a: derived.a, c: derived.c, m: derived.m, seed: derived.seed }));
+      const next = generateFullPeriodAditivo({ a: derived.a, c: derived.c, m: derived.m, seed: derived.seed });
+      setGen(next);
+      setLastGoodGen(next);
     } else {
       setGen(null);
     }
@@ -185,220 +254,389 @@ export default function LcgAditivo() {
 
   const showDecimals = Number.isFinite(derived.decimals) ? derived.decimals : 0;
 
-  return (
-    <section className="card" style={{ maxWidth: 1100 }}>
-      <h3 style={{ marginBottom: 12 }}>LCG Aditivo (c &gt; 0) — modos a/k y m:g/m/p</h3>
+  /** ---------- Helpers UI (solo diseño/UX) ---------- */
+  const badge = (text) => (
+    <span style={{
+      display: "inline-block",
+      padding: "2px 8px",
+      borderRadius: 999,
+      fontSize: 12,
+      background: "#f3f4f6",
+      border: "1px solid #e5e7eb",
+      marginLeft: 6
+    }}>{text}</span>
+  );
 
-      {/* Sliders de modo */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 8 }}>
-        <div>
-          <label style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>
-            Modo para definir a
-          </label>
-          <input
-            type="range" min={0} max={1} step={1}
-            value={modeA}
-            onChange={(e) => setModeA(Number(e.target.value))}
-            style={{ width: "100%" }}
-          />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 4 }}>
-            <span style={{ fontWeight: modeA === 0 ? 700 : 400 }}>Ingresar a</span>
-            <span style={{ fontWeight: modeA === 1 ? 700 : 400 }}>Usar k → a = 1 + 4k</span>
-          </div>
-        </div>
-
-        <div>
-          <label style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>
-            Modo para definir m
-          </label>
-          {/* 0=g, 1=m, 2=p */}
-          <input
-            type="range" min={0} max={2} step={1}
-            value={modeM}
-            onChange={(e) => setModeM(Number(e.target.value))}
-            style={{ width: "100%" }}
-          />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 4 }}>
-            <span style={{ fontWeight: modeM === 0 ? 700 : 400 }}>g → m = 2^g</span>
-            <span style={{ fontWeight: modeM === 1 ? 700 : 400 }}>m directo</span>
-            <span style={{ fontWeight: modeM === 2 ? 700 : 400 }}>p → g = log(p)/log(2) → m</span>
-          </div>
-        </div>
+  const Section = ({ title, subtitle, children, right }) => (
+    <section style={{
+      border: "1px solid #eee",
+      borderRadius: 14,
+      padding: 14,
+      background: "#fff",
+      boxShadow: "0 1px 2px rgba(0,0,0,.04)",
+      marginBottom: 12
+    }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+        <h4 style={{ margin: 0, fontSize: 16 }}>{title}</h4>
+        {right}
       </div>
+      {subtitle && <div style={{ fontSize: 13, opacity: .8, marginTop: 4 }}>{subtitle}</div>}
+      <div style={{ marginTop: 10 }}>{children}</div>
+    </section>
+  );
 
-      {/* Formulario */}
-      <form className="grid-form" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-        {modeA === 0 ? (
-          <label> a (multiplicador)
-            <input type="number" name="a" placeholder="p.ej. 13" value={fields.a} onChange={onField} />
-          </label>
-        ) : (
-          <>
-            <label> k (entero &gt; 0)
-              <input type="number" name="k" placeholder="p.ej. 3" value={fields.k} onChange={onField} />
-            </label>
-            <div style={{ alignSelf: "end", fontSize: 14, opacity: .85 }}>
-              a = 1 + 4k ⇒ <b>{fields.k !== "" && isInt(Number(fields.k)) && Number(fields.k) > 0 ? 1 + 4 * Number(fields.k) : "?"}</b>
-            </div>
-          </>
-        )}
-
-        <label> c (incremento) — debe ser &gt; 0 y coprimo con m
-          <input type="number" name="c" placeholder="p.ej. 7" value={fields.c} onChange={onField} />
-        </label>
-
-        {modeM === 0 && (
-          <>
-            <label> g (exponente) → m = 2^g
-              <input type="number" name="g" placeholder="p.ej. 4" value={fields.g} onChange={onField} />
-            </label>
-            <div style={{ alignSelf: "end", fontSize: 14, opacity: .85 }}>
-              m = 2^g ⇒ <b>{fields.g !== "" && isInt(Number(fields.g)) ? 2 ** Number(fields.g) : "?"}</b>
-            </div>
-          </>
-        )}
-
-        {modeM === 1 && (
-          <>
-            <label> m (potencia de 2)
-              <input type="number" name="m" placeholder="p.ej. 16" value={fields.m} onChange={onField} />
-            </label>
-            <div style={{ alignSelf: "end", fontSize: 14, opacity: .85 }}>
-              g = log₂(m) ⇒ <b>{fields.m !== "" && isInt(Number(fields.m)) && isPowerOfTwo(Number(fields.m)) ? Math.log2(Number(fields.m)) : "?"}</b>
-            </div>
-          </>
-        )}
-
-        {modeM === 2 && (
-          <>
-            <label> p (potencia de 2)
-              <input type="number" name="p" placeholder="p.ej. 16" value={fields.p} onChange={onField} />
-            </label>
-            <div style={{ alignSelf: "end", fontSize: 14, opacity: .85 }}>
-              g = ln(p)/ln(2) ⇒ <b>{fields.p !== "" && isInt(Number(fields.p)) && isPowerOfTwo(Number(fields.p)) ? Math.round(Math.log(Number(fields.p)) / Math.log(2)) : "?"}</b>
-              {" · "} m = 2^g ⇒ <b>{fields.p !== "" && isInt(Number(fields.p)) && isPowerOfTwo(Number(fields.p)) ? Number(fields.p) : "?"}</b>
-            </div>
-          </>
-        )}
-
-        <label> seed (x₀)
-          <input type="number" name="seed" placeholder="p.ej. 5" value={fields.seed} onChange={onField} />
-        </label>
-
-        <label> decimales para rᵢ (rᵢ = Xᵢ / (m-1))
-          <input type="number" name="decimals" placeholder="p.ej. 4" value={fields.decimals} onChange={onField} />
-        </label>
-      </form>
-
-      {/* Estado a, m, g actuales */}
-      <div style={{ marginTop: 8, fontSize: 14, opacity: 0.9 }}>
-        <strong>a actual:</strong> {Number.isFinite(derived.a) ? derived.a : "—"}{" · "}
-        <strong>m actual:</strong> {Number.isFinite(derived.m) ? derived.m : "—"}{" · "}
-        <strong>g actual:</strong> {Number.isFinite(derived.g) ? derived.g : "—"}
-      </div>
-
-      {/* Errores / Sugerencias */}
-      {derived.errors.length > 0 && (
-        <div className="alert" style={{ marginTop: 12, color: "#b00020" }}>
-          <strong>Errores:</strong>
-          {derived.errors.map((er, i) => <div key={i}>• {er}</div>)}
+  const Control = ({ label, hint, after, name, value, onCommit, ...rest }) => (
+    <label style={{ display: "block" }}>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>{label}</div>
+      <BufferedNumericInput
+        name={name}
+        value={value}
+        onCommit={(v) => onCommit(name, v)}
+        {...rest}
+      />
+      {(hint || after) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+          {hint && <div style={{ fontSize: 12, opacity: .8 }}>{hint}</div>}
+          {after}
         </div>
       )}
+    </label>
+  );
+
+  const Pill = ({ active, children, onClick }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 999,
+        border: `1px solid ${active ? "#111827" : "#e5e7eb"}`,
+        background: active ? "#111827" : "#fff",
+        color: active ? "#fff" : "#111827",
+        cursor: "pointer",
+        fontSize: 13
+      }}
+    >
+      {children}
+    </button>
+  );
+
+  const Button = ({ children, tone="default", ...props }) => (
+    <button
+      {...props}
+      style={{
+        padding: "10px 14px",
+        borderRadius: 10,
+        border: "1px solid transparent",
+        cursor: "pointer",
+        fontWeight: 600,
+        background: tone === "primary" ? "#111827" : "#fff",
+        color: tone === "primary" ? "#fff" : "#111827",
+        boxShadow: tone === "primary" ? "0 1px 2px rgba(0,0,0,.12)" : "none"
+      }}
+    >
+      {children}
+    </button>
+  );
+
+  const copyTable = () => {
+    const g = gen ?? lastGoodGen;
+    if (!g) return;
+    const header = ["i","Xi-1","Operación","a·Xi-1 + c","m","Xi","r_i (m-1)"].join("\t");
+    const lines = g.rows.map(r => [
+      r.i, r.prev, r.opText, r.opNoMod, r.m, r.xi, ui(r.xi, r.m, showDecimals)
+    ].join("\t"));
+    const seed = `0\t—\t(semilla)\t—\t${g.m}\t${g.raw[0]}\t${ui(g.raw[0], g.m, showDecimals)}`;
+    const tsv = [header, seed, ...lines].join("\n");
+    navigator.clipboard.writeText(tsv);
+  };
+
+  const clearAll = () => {
+    setFields({ a:"", k:"", c:"", g:"", m:"", p:"", seed:"", decimals:"" });
+  };
+
+  const gShown = gen ?? lastGoodGen;
+
+  return (
+    <div style={{ maxWidth: 1120, margin: "0 auto", padding: 12 }}>
+      {/* Encabezado amigable */}
+      <header style={{ marginBottom: 12 }}>
+        <h2 style={{ margin: 0 }}>Generador Congruencial Lineal — <span style={{ fontWeight: 400 }}>ADITIVO (c ≠ 0)</span></h2>
+        <div style={{ fontSize: 13, opacity: .85, marginTop: 6 }}>
+          Completa los pasos de izquierda a derecha. Los resultados aparecen abajo en tiempo real.
+          {badge("rᵢ = Xᵢ / (m − 1)")}
+          {badge("m = 2^g")}
+          {badge("a = 1 + 4k (opcional)")}
+        </div>
+      </header>
+
+      {/* Paso 1: a / k */}
+      <Section
+        title="1) Multiplicador a"
+        subtitle="Elige si quieres escribir a directamente o calcularlo con k (a = 1 + 4k)."
+        right={
+          <div style={{ display: "flex", gap: 8 }}>
+            <Pill active={modeA === 0} onClick={() => setModeA(0)}>Ingresar a</Pill>
+            <Pill active={modeA === 1} onClick={() => setModeA(1)}>Usar k → a = 1 + 4k</Pill>
+          </div>
+        }
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+          {modeA === 0 ? (
+            <Control
+              label="a (entero > 0)"
+              name="a"
+              placeholder="Ej.: 13"
+              value={fields.a}
+              onCommit={commitField}
+              hint="Escribe el valor de a directamente."
+            />
+          ) : (
+            <>
+              <Control
+                label="k (entero > 0)"
+                name="k"
+                placeholder="Ej.: 3"
+                value={fields.k}
+                onCommit={commitField}
+                hint="Usamos a = 1 + 4k."
+                after={badge(`a = ${fields.k && isInt(Number(fields.k)) && Number(fields.k)>0 ? 1+4*Number(fields.k) : "?"}`)}
+              />
+              <div />
+              <div />
+            </>
+          )}
+        </div>
+      </Section>
+
+      {/* Paso 2: m por g / m directo / p */}
+      <Section
+        title="2) Módulo m"
+        subtitle="Define m usando g (m = 2^g), m directo, o p (g = ln(p)/ln(2) → m)."
+        right={
+          <div style={{ display: "flex", gap: 8 }}>
+            <Pill active={modeM === 0} onClick={() => setModeM(0)}>Con g</Pill>
+            <Pill active={modeM === 1} onClick={() => setModeM(1)}>m directo</Pill>
+            <Pill active={modeM === 2} onClick={() => setModeM(2)}>Con p</Pill>
+          </div>
+        }
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+          {modeM === 0 && (
+            <Control
+              label="g (entero 2–31)"
+              name="g"
+              placeholder="Ej.: 4 → m = 16"
+              value={fields.g}
+              onCommit={commitField}
+              hint="m = 2^g"
+              after={badge(`m = ${fields.g && isInt(Number(fields.g)) ? 2 ** Number(fields.g) : "?"}`)}
+            />
+          )}
+
+          {modeM === 1 && (
+            <Control
+              label="m (potencia de 2)"
+              name="m"
+              placeholder="Ej.: 16, 32, 64…"
+              value={fields.m}
+              onCommit={commitField}
+              hint="Si m es potencia de 2, g = log₂(m)."
+              after={badge(`g = ${fields.m && isInt(Number(fields.m)) && isPowerOfTwo(Number(fields.m)) ? Math.log2(Number(fields.m)) : "?"}`)}
+            />
+          )}
+
+          {modeM === 2 && (
+            <Control
+              label="p (potencia de 2)"
+              name="p"
+              placeholder="Ej.: 16"
+              value={fields.p}
+              onCommit={commitField}
+              hint="Calculamos g = ln(p)/ln(2) y luego m = 2^g."
+              after={
+                <>
+                  {badge(`g = ${fields.p && isInt(Number(fields.p)) && isPowerOfTwo(Number(fields.p)) ? Math.round(Math.log(Number(fields.p))/Math.log(2)) : "?"}`)}
+                  {badge(`m = ${fields.p && isInt(Number(fields.p)) && isPowerOfTwo(Number(fields.p)) ? Number(fields.p) : "?"}`)}
+                </>
+              }
+            />
+          )}
+        </div>
+
+        <div style={{ marginTop: 8, fontSize: 14 }}>
+          <strong>Vista previa:</strong>{" "}
+          a = <b>{Number.isFinite(derived.a) ? derived.a : "—"}</b> ·{" "}
+          m = <b>{Number.isFinite(derived.m) ? derived.m : "—"}</b> ·{" "}
+          g = <b>{Number.isFinite(derived.g) ? derived.g : "—"}</b>
+        </div>
+      </Section>
+
+      {/* Paso 3: c, semilla (>0), decimales */}
+      <Section
+        title="3) Incremento, semilla y formato"
+        subtitle="Completa c (coprimo con m), la semilla X₀ (> 0), y cuántos decimales mostrar para rᵢ."
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+          <Control
+            label="c (incremento > 0, coprimo con m)"
+            name="c"
+            placeholder="Ej.: 7"
+            value={fields.c}
+            onCommit={commitField}
+            hint="Para buen periodo: gcd(c, m) = 1."
+          />
+          <Control
+            label="Semilla X₀ (> 0)"
+            name="seed"
+            placeholder="Ej.: 5, 12, 123456…"
+            value={fields.seed}
+            onCommit={commitField}
+            hint="Cualquier entero > 0."
+          />
+          <Control
+            label="Decimales para rᵢ"
+            name="decimals"
+            placeholder="Ej.: 4"
+            value={fields.decimals}
+            onCommit={commitField}
+            hint="rᵢ = Xᵢ / (m − 1)"
+          />
+        </div>
+
+        {/* Acciones */}
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <Button tone="primary" type="button">
+            Generar (en vivo)
+          </Button>
+          <Button type="button" onClick={clearAll}>Limpiar</Button>
+          <Button type="button" onClick={copyTable} disabled={!(gen ?? lastGoodGen)}>Copiar tabla</Button>
+        </div>
+      </Section>
+
+      {/* Hints / Errores */}
       {derived.hints.length > 0 && derived.errors.length === 0 && (
-        <div className="alert" style={{ marginTop: 12, color: "#8a6d3b" }}>
+        <div style={{
+          border: "1px solid #fde68a",
+          background: "#fffbeb",
+          color: "#92400e",
+          borderRadius: 12,
+          padding: 10,
+          marginTop: 8
+        }}>
           <strong>Sugerencias (Hull–Dobell):</strong>
           {derived.hints.map((h, i) => <div key={i}>• {h}</div>)}
         </div>
       )}
 
-      {/* Resultados */}
-      {gen && (
-        <>
-          <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
-            <div>
-              <h4>Valores crudos (Xi), incluyendo X₀</h4>
-              <ol>{gen.raw.map((v, i) => <li key={i}>{v}</li>)}</ol>
-            </div>
-            <div>
-              <h4>Normalizados (rᵢ = Xᵢ / (m-1)), con {showDecimals} decimales</h4>
-              <ol>{gen.raw.map((x, i) => <li key={i}>{ui(x, gen.m, showDecimals)}</li>)}</ol>
-            </div>
-          </div>
-
-          {/* Tabla detallada */}
-          <div style={{ marginTop: 24 }}>
-            <h4>Tabla de iteraciones (detalle de operación)</h4>
-            <p style={{ marginTop: 4, fontSize: 14 }}>
-              <strong>Nota:</strong> i=0 es la semilla X₀; i≥1 muestra la operación.
-              Cambia <em>decimales</em> y los modos <em>a/k</em>, <em>g/m/p</em> para ver cambios en vivo.
-            </p>
-
-            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8 }}>
-              <thead>
-                <tr>
-                  <th style={th}>i</th>
-                  <th style={th}>Xi-1 (entrada)</th>
-                  <th style={th}>Operación (texto)</th>
-                  <th style={th}>Valor sin módulo (a·Xi-1 + c)</th>
-                  <th style={th}>m</th>
-                  <th style={th}>Xi = (…) mod m</th>
-                  <th style={th}>rᵢ = Xi / (m-1) (decimales={showDecimals})</th>
-                  <th style={th}>Explicación breve</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* Semilla */}
-                <tr>
-                  <td style={td}>0</td>
-                  <td style={td}>—</td>
-                  <td style={td}>(semilla)</td>
-                  <td style={td}>—</td>
-                  <td style={td}>{gen.m}</td>
-                  <td style={td}>{gen.raw[0]}</td>
-                  <td style={td}>{ui(gen.raw[0], gen.m, showDecimals)}</td>
-                  <td style={td}>Valor inicial X₀.</td>
-                </tr>
-
-                {gen.rows.map((r) => (
-                  <tr key={r.i}>
-                    <td style={td}>{r.i}</td>
-                    <td style={td}>{r.prev}</td>
-                    <td style={td}>{r.opText}</td>
-                    <td style={td}>{r.opNoMod}</td>
-                    <td style={td}>{r.m}</td>
-                    <td style={td}>{r.xi}</td>
-                    <td style={td}>{ui(r.xi, r.m, showDecimals)}</td>
-                    <td style={td}>{r.explanation}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div style={{ marginTop: 12, fontSize: 14 }}>
-              <strong>Resumen:</strong>{" "}
-              período detectado = <b>{gen.period}</b>
-              {" · "}m = {gen.m}
-              {" · "}r<sub>min</sub> = {Math.min(...gen.raw.map(x => x / (gen.m - 1))).toFixed(showDecimals)}
-              {" · "}r<sub>max</sub> = {Math.max(...gen.raw.map(x => x / (gen.m - 1))).toFixed(showDecimals)}
-            </div>
-          </div>
-        </>
+      {derived.errors.length > 0 && (
+        <div style={{
+          border: "1px solid #fecaca",
+          background: "#fef2f2",
+          color: "#991b1b",
+          borderRadius: 12,
+          padding: 10,
+          marginTop: 8
+        }}>
+          <strong>Revisa los campos:</strong>
+          {derived.errors.map((er, i) => <div key={i}>• {er}</div>)}
+        </div>
       )}
-    </section>
+
+      {/* Resultados (si hay algo válido, mostramos el último bueno) */}
+      {(gen ?? lastGoodGen) && (() => {
+        const gShown = gen ?? lastGoodGen;
+        return (
+          <Section
+            title="Resultados"
+            subtitle="Debajo verás la secuencia cruda Xᵢ, los normalizados rᵢ = Xᵢ/(m−1) y la tabla paso a paso."
+          >
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div>
+                <h4 style={{ marginTop: 0 }}>Valores crudos (Xᵢ), incluyendo X₀</h4>
+                <ol style={{ paddingLeft: 20 }}>
+                  {gShown.raw.map((v, i) => <li key={i}>{v}</li>)}
+                </ol>
+              </div>
+              <div>
+                <h4 style={{ marginTop: 0 }}>Normalizados (rᵢ = Xᵢ / (m − 1)), con {showDecimals} decimales</h4>
+                <ol style={{ paddingLeft: 20 }}>
+                  {gShown.raw.map((x, i) => <li key={i}>{ui(x, gShown.m, showDecimals)}</li>)}
+                </ol>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 18 }}>
+              <h4 style={{ marginTop: 0 }}>Tabla de iteraciones</h4>
+              <div style={{ fontSize: 13, opacity: .8, marginBottom: 6 }}>
+                i=0 es la semilla X₀; i≥1 aplica Xᵢ = (a·Xᵢ₋₁ + c) mod m.
+              </div>
+
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th style={th}>i</th>
+                    <th style={th}>Xᵢ₋₁ (entrada)</th>
+                    <th style={th}>Operación</th>
+                    <th style={th}>a·Xᵢ₋₁ + c (sin módulo)</th>
+                    <th style={th}>m</th>
+                    <th style={th}>Xᵢ</th>
+                    <th style={th}>rᵢ = Xᵢ/(m−1)</th>
+                    <th style={th}>Nota</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={td}>0</td>
+                    <td style={td}>—</td>
+                    <td style={td}>(semilla)</td>
+                    <td style={td}>—</td>
+                    <td style={td}>{gShown.m}</td>
+                    <td style={td}>{gShown.raw[0]}</td>
+                    <td style={td}>{ui(gShown.raw[0], gShown.m, showDecimals)}</td>
+                    <td style={td}>Valor inicial X₀.</td>
+                  </tr>
+                  {gShown.rows.map((r) => (
+                    <tr key={r.i}>
+                      <td style={td}>{r.i}</td>
+                      <td style={td}>{r.prev}</td>
+                      <td style={td}>{r.opText}</td>
+                      <td style={td}>{r.opNoMod}</td>
+                      <td style={td}>{r.m}</td>
+                      <td style={td}>{r.xi}</td>
+                      <td style={td}>{ui(r.xi, r.m, showDecimals)}</td>
+                      <td style={td}>{r.explanation}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div style={{ marginTop: 10, fontSize: 14 }}>
+                <strong>Resumen:</strong>{" "}
+                período detectado = <b>{gShown.period}</b>
+                {" · "}m = {gShown.m}
+                {" · "}r<sub>min</sub> = {Math.min(...gShown.raw.map(x => x / (gShown.m - 1))).toFixed(showDecimals)}
+                {" · "}r<sub>max</sub> = {Math.max(...gShown.raw.map(x => x / (gShown.m - 1))).toFixed(showDecimals)}
+              </div>
+            </div>
+          </Section>
+        );
+      })()}
+    </div>
   );
 }
 
 /** -------------------- Estilos de tabla -------------------- */
 const th = {
   textAlign: "left",
-  borderBottom: "1px solid #ccc",
-  padding: "8px 6px",
-  background: "#f8f8f8",
-  fontWeight: 600,
-  fontSize: 14
+  borderBottom: "1px solid #e5e7eb",
+  padding: "10px 8px",
+  background: "#f9fafb",
+  fontWeight: 700,
+  fontSize: 13
 };
 const td = {
-  borderBottom: "1px solid #eee",
-  padding: "8px 6px",
-  fontSize: 14
+  borderBottom: "1px solid #f1f5f9",
+  padding: "10px 8px",
+  fontSize: 13
 };

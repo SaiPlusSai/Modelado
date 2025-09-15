@@ -3,11 +3,13 @@ import React, { useEffect, useMemo, useState } from "react";
 /** -------------------- Utils -------------------- */
 const isInt = (v) => Number.isInteger(v);
 const isPowerOfTwo = (m) => m > 0 && (m & (m - 1)) === 0;
-/** r_i = X_i / (m - 1) */
+/** r_i = X_i / (m − 1) */
 const ui = (x, m, decimals = 0) => (x / (m - 1)).toFixed(decimals);
+/** permite "" y sólo dígitos ("5","54"), sin signos ni puntos */
+const isDigits = (s) => /^\d+$/.test(s);
 
-/** -------------------- Generador (MULTIPLICATIVO) -------------------- */
-/** X_{i+1} = (a * X_i) mod m */
+/** -------------------- Motor (MULTIPLICATIVO) -------------------- */
+/** Xᵢ = (a·Xᵢ₋₁) mod m  (c = 0) */
 function generateMultiplicativo({ a, m, seed }) {
   const raw = [seed];
   const rows = [];
@@ -23,11 +25,11 @@ function generateMultiplicativo({ a, m, seed }) {
     rows.push({
       i,
       prev: x,
-      opText: `(${a} * ${x}) mod ${m}`,
+      opText: `(${a} × ${x}) mod ${m}`,
       opNoMod,
       m,
       xi,
-      explanation: "Multiplico Xi-1 por a y reduzco módulo m.",
+      explanation: "Multiplico Xᵢ₋₁ por a y reduzco módulo m."
     });
     raw.push(xi);
 
@@ -42,20 +44,14 @@ function generateMultiplicativo({ a, m, seed }) {
 /** -------------------- Componente -------------------- */
 export default function LcgMultiplicativo() {
   /**
-   * modeA:  solo por k, pero con selector de fórmula:
-   *   a = 8k + 3  (formulaA = 0)
-   *   a = 8k + 5  (formulaA = 1)
-   *
-   * modeM: 0 = usar g (m = 2^g)
-   *        1 = ingresar m directo (potencia de 2)
-   *        2 = usar p (g = ln(p)/ln(2); m = 2^g)
+   * formulaA: 0 => a = 8k + 3 ; 1 => a = 8k + 5
+   * modeM: 0 = usar g (m = 2^g), 1 = m directo (pot. 2), 2 = p (pot. 2) → g → m
    */
   const [formulaA, setFormulaA] = useState(0);
   const [modeM, setModeM] = useState(0);
 
-  // Campos como string para permitir vacío
   const [fields, setFields] = useState({
-    k: "",          // para calcular a
+    k: "",
     g: "", m: "", p: "",
     seed: "",
     decimals: ""
@@ -63,86 +59,98 @@ export default function LcgMultiplicativo() {
 
   const onField = (e) => {
     const { name, value } = e.target;
-    setFields((p) => ({ ...p, [name]: value }));
+    if (value === "" || isDigits(value)) setFields((p) => ({ ...p, [name]: value }));
   };
 
-  /** ------ Derivados y validación ------ */
+  /** ---------- Derivados + validaciones (UX suave) ---------- */
   const derived = useMemo(() => {
     const errors = [];
     const hints = [];
 
     // decimales
-    const D = fields.decimals === "" ? NaN : Number(fields.decimals);
-    if (!Number.isNaN(D) && (!isInt(D) || D < 0 || D > 10)) {
-      errors.push("decimales debe ser entero entre 0 y 10.");
+    let D = NaN;
+    if (fields.decimals !== "") {
+      if (isDigits(fields.decimals)) {
+        D = Number(fields.decimals);
+        if (!isInt(D) || D < 0 || D > 10) errors.push("decimales debe ser entero entre 0 y 10.");
+      }
     }
 
-    // a a partir de k y de la fórmula elegida
+    // a desde k y fórmula elegida
     let A = NaN;
     if (fields.k !== "") {
-      const K = Number(fields.k);
-      if (!isInt(K) || K <= 0) {
-        errors.push("k debe ser entero positivo.");
-      } else {
-        A = (formulaA === 0) ? (8 * K + 3) : (8 * K + 5);
+      if (isDigits(fields.k)) {
+        const K = Number(fields.k);
+        if (!isInt(K) || K <= 0) {
+          errors.push("k debe ser entero positivo.");
+        } else {
+          A = (formulaA === 0) ? (8 * K + 3) : (8 * K + 5);
+        }
       }
     }
 
     // m/g/p
     let M = NaN, G = NaN;
     if (modeM === 0) {
-      // g → m = 2^g
       if (fields.g !== "") {
-        G = Number(fields.g);
-        if (!isInt(G) || G < 2 || G > 31) {
-          errors.push("g debe ser entero entre 2 y 31 (m = 2^g).");
-        } else {
-          M = 2 ** G;
+        if (isDigits(fields.g)) {
+          G = Number(fields.g);
+          if (!isInt(G) || G < 2 || G > 31) {
+            errors.push("g debe ser entero entre 2 y 31 (m = 2^g).");
+          } else {
+            M = 2 ** G;
+          }
         }
       }
     } else if (modeM === 1) {
       if (fields.m !== "") {
-        M = Number(fields.m);
-        if (!isInt(M) || M <= 1) {
-          errors.push("m debe ser entero > 1.");
-        } else if (!isPowerOfTwo(M)) {
-          errors.push("m debe ser potencia de 2.");
-        } else {
-          G = Math.log2(M);
+        if (isDigits(fields.m)) {
+          M = Number(fields.m);
+          if (!isInt(M) || M <= 1) {
+            errors.push("m debe ser entero > 1.");
+          } else if (!isPowerOfTwo(M)) {
+            errors.push("m debe ser potencia de 2.");
+          } else {
+            G = Math.log2(M);
+          }
         }
       }
     } else {
       if (fields.p !== "") {
-        const P = Number(fields.p);
-        if (!isInt(P) || P <= 1) {
-          errors.push("p debe ser entero > 1.");
-        } else if (!isPowerOfTwo(P)) {
-          errors.push("p debe ser potencia de 2 (para que g sea entero).");
-        } else {
-          G = Math.round(Math.log(P) / Math.log(2));
-          M = 2 ** G; // con p potencia de 2, coincide
+        if (isDigits(fields.p)) {
+          const P = Number(fields.p);
+          if (!isInt(P) || P <= 1) {
+            errors.push("p debe ser entero > 1.");
+          } else if (!isPowerOfTwo(P)) {
+            errors.push("p debe ser potencia de 2 (para que g sea entero).");
+          } else {
+            G = Math.round(Math.log(P) / Math.log(2));
+            M = 2 ** G; // con p potencia de 2, coincide
+          }
         }
       }
     }
 
-    // seed (depende de M)
+    // seed (validamos cuando hay M)
     let S = NaN;
     if (!Number.isNaN(M) && fields.seed !== "") {
-      S = Number(fields.seed);
-      if (!isInt(S) || S <= 0 || S >= M) {
-        errors.push(`seed (x₀) debe ser entero en [1, ${isNaN(M) ? "m-1" : M - 1}].`);
-      } else if (S % 2 === 0) {
-        errors.push("seed (x₀) debe ser IMPAR (y ≠ 0) en multiplicativo con m = 2^g.");
+      if (isDigits(fields.seed)) {
+        S = Number(fields.seed);
+        if (!isInt(S) || S <= 0 || S >= M) {
+          errors.push(`seed (x₀) debe estar en [1, ${isNaN(M) ? "m-1" : M - 1}].`);
+        } else if (S % 2 === 0) {
+          errors.push("seed (x₀) debe ser IMPAR con m = 2^g.");
+        }
       }
     }
 
-    // Sugerencias/recordatorios de período para m=2^g
-    if (![A, M, S].some(Number.isNaN)) {
+    // Tips de período (si está todo listo)
+    if (![A, M, S, D].some(Number.isNaN)) {
       const aMod8 = ((A % 8) + 8) % 8;
-      if (!(aMod8 === 3 || aMod8 === 5)) {
-        hints.push("Para m = 2^g conviene a ≡ 3 ó 5 (mod 8) para mejor período.");
-      } else {
+      if (aMod8 === 3 || aMod8 === 5) {
         hints.push("OK: a ≡ 3 ó 5 (mod 8). Período máx. sobre impares ≈ 2^{g-2}.");
+      } else {
+        hints.push("Mejor elegí a ≡ 3 ó 5 (mod 8) para buen período con m = 2^g.");
       }
     }
 
@@ -153,7 +161,7 @@ export default function LcgMultiplicativo() {
     };
   }, [fields, formulaA, modeM]);
 
-  /** ------ Generación en tiempo real ------ */
+  /** ---------- Generación en vivo ---------- */
   const [gen, setGen] = useState(null);
   useEffect(() => {
     if (derived.ready) {
@@ -165,156 +173,353 @@ export default function LcgMultiplicativo() {
 
   const showDecimals = Number.isFinite(derived.decimals) ? derived.decimals : 0;
 
-  return (
-    <section className="card" style={{ maxWidth: 1100 }}>
-      <h3 style={{ marginBottom: 12 }}>LCG Multiplicativo (c = 0) — a por k y m:g/m/p</h3>
+  /** ---------- Helpers UI (mismo diseño que el aditivo) ---------- */
+  const badge = (text) => (
+    <span style={{
+      display: "inline-block",
+      padding: "2px 8px",
+      borderRadius: 999,
+      fontSize: 12,
+      background: "#f3f4f6",
+      border: "1px solid #e5e7eb",
+      marginLeft: 6
+    }}>{text}</span>
+  );
 
-      {/* Controles de modo */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 8 }}>
-        <div>
-          <label style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>
-            Fórmula para a a partir de k
-          </label>
-          {/* 0: a = 8k + 3, 1: a = 8k + 5 */}
-          <input
-            type="range" min={0} max={1} step={1}
-            value={formulaA}
-            onChange={(e) => setFormulaA(Number(e.target.value))}
-            style={{ width: "100%" }}
-          />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 4 }}>
-            <span style={{ fontWeight: formulaA === 0 ? 700 : 400 }}>a = 8k + 3</span>
-            <span style={{ fontWeight: formulaA === 1 ? 700 : 400 }}>a = 8k + 5</span>
-          </div>
-        </div>
-
-        <div>
-          <label style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>
-            Modo para definir m
-          </label>
-          {/* 0=g, 1=m, 2=p */}
-          <input
-            type="range" min={0} max={2} step={1}
-            value={modeM}
-            onChange={(e) => setModeM(Number(e.target.value))}
-            style={{ width: "100%" }}
-          />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 4 }}>
-            <span style={{ fontWeight: modeM === 0 ? 700 : 400 }}>g → m = 2^g</span>
-            <span style={{ fontWeight: modeM === 1 ? 700 : 400 }}>m directo</span>
-            <span style={{ fontWeight: modeM === 2 ? 700 : 400 }}>p → g = ln(p)/ln(2) → m</span>
-          </div>
-        </div>
+  const Section = ({ title, subtitle, children, right }) => (
+    <section style={{
+      border: "1px solid #eee",
+      borderRadius: 14,
+      padding: 14,
+      background: "#fff",
+      boxShadow: "0 1px 2px rgba(0,0,0,.04)",
+      marginBottom: 12
+    }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+        <h4 style={{ margin: 0, fontSize: 16 }}>{title}</h4>
+        {right}
       </div>
+      {subtitle && <div style={{ fontSize: 13, opacity: .8, marginTop: 4 }}>{subtitle}</div>}
+      <div style={{ marginTop: 10 }}>{children}</div>
+    </section>
+  );
 
-      {/* Formulario */}
-      <form className="grid-form" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-        <label> k (entero &gt; 0)
-          <input type="number" name="k" placeholder="p.ej. 3" value={fields.k} onChange={onField} />
-        </label>
-        <div style={{ alignSelf: "end", fontSize: 14, opacity: .85 }}>
-          a = {formulaA === 0 ? "8k + 3" : "8k + 5"} ⇒ <b>
-            {fields.k !== "" && isInt(Number(fields.k)) && Number(fields.k) > 0
-              ? (formulaA === 0 ? 8 * Number(fields.k) + 3 : 8 * Number(fields.k) + 5)
-              : "?"}
-          </b>
-        </div>
-
-        {modeM === 0 && (
-          <>
-            <label> g (exponente) → m = 2^g
-              <input type="number" name="g" placeholder="p.ej. 4" value={fields.g} onChange={onField} />
-            </label>
-            <div style={{ alignSelf: "end", fontSize: 14, opacity: .85 }}>
-              m = 2^g ⇒ <b>{fields.g !== "" && isInt(Number(fields.g)) ? 2 ** Number(fields.g) : "?"}</b>
-            </div>
-          </>
-        )}
-        {modeM === 1 && (
-          <>
-            <label> m (potencia de 2)
-              <input type="number" name="m" placeholder="p.ej. 16" value={fields.m} onChange={onField} />
-            </label>
-            <div style={{ alignSelf: "end", fontSize: 14, opacity: .85 }}>
-              g = log₂(m) ⇒ <b>{fields.m !== "" && isInt(Number(fields.m)) && isPowerOfTwo(Number(fields.m)) ? Math.log2(Number(fields.m)) : "?"}</b>
-            </div>
-          </>
-        )}
-        {modeM === 2 && (
-          <>
-            <label> p (potencia de 2)
-              <input type="number" name="p" placeholder="p.ej. 16" value={fields.p} onChange={onField} />
-            </label>
-            <div style={{ alignSelf: "end", fontSize: 14, opacity: .85 }}>
-              g = ln(p)/ln(2) ⇒ <b>{fields.p !== "" && isInt(Number(fields.p)) && isPowerOfTwo(Number(fields.p)) ? Math.round(Math.log(Number(fields.p)) / Math.log(2)) : "?"}</b>
-              {" · "} m = 2^g ⇒ <b>{fields.p !== "" && isInt(Number(fields.p)) && isPowerOfTwo(Number(fields.p)) ? Number(fields.p) : "?"}</b>
-            </div>
-          </>
-        )}
-
-        <label> seed (x₀) — IMPAR y ≠ 0
-          <input type="number" name="seed" placeholder="p.ej. 5" value={fields.seed} onChange={onField} />
-        </label>
-
-        <label> decimales para rᵢ (rᵢ = Xᵢ / (m-1))
-          <input type="number" name="decimals" placeholder="p.ej. 4" value={fields.decimals} onChange={onField} />
-        </label>
-      </form>
-
-      {/* Estado actuales */}
-      <div style={{ marginTop: 8, fontSize: 14, opacity: 0.9 }}>
-        <strong>a actual:</strong> {Number.isFinite(derived.a) ? derived.a : "—"}{" · "}
-        <strong>m actual:</strong> {Number.isFinite(derived.m) ? derived.m : "—"}{" · "}
-        <strong>g actual:</strong> {Number.isFinite(derived.g) ? derived.g : "—"}
-      </div>
-
-      {/* Errores / Sugerencias */}
-      {derived.errors.length > 0 && (
-        <div className="alert" style={{ marginTop: 12, color: "#b00020" }}>
-          <strong>Errores:</strong>
-          {derived.errors.map((er, i) => <div key={i}>• {er}</div>)}
+  const Control = ({ label, hint, after, ...rest }) => (
+    <label style={{ display: "block" }}>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>{label}</div>
+      <input
+        {...rest}
+        style={{
+          width: "100%",
+          border: "1px solid #e5e7eb",
+          borderRadius: 10,
+          padding: "10px 12px",
+          outline: "none"
+        }}
+      />
+      {(hint || after) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+          {hint && <div style={{ fontSize: 12, opacity: .8 }}>{hint}</div>}
+          {after}
         </div>
       )}
+    </label>
+  );
+
+  const Pill = ({ active, children, onClick }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 999,
+        border: `1px solid ${active ? "#111827" : "#e5e7eb"}`,
+        background: active ? "#111827" : "#fff",
+        color: active ? "#fff" : "#111827",
+        cursor: "pointer",
+        fontSize: 13
+      }}
+    >
+      {children}
+    </button>
+  );
+
+  const Button = ({ children, tone="default", ...props }) => (
+    <button
+      {...props}
+      style={{
+        padding: "10px 14px",
+        borderRadius: 10,
+        border: "1px solid transparent",
+        cursor: "pointer",
+        fontWeight: 600,
+        background: tone === "primary" ? "#111827" : "#fff",
+        color: tone === "primary" ? "#fff" : "#111827",
+        boxShadow: tone === "primary" ? "0 1px 2px rgba(0,0,0,.12)" : "none"
+      }}
+    >
+      {children}
+    </button>
+  );
+
+  const copyTable = () => {
+    if (!gen) return;
+    const header = ["i","Xi-1","Operación","a·Xi-1 (sin módulo)","m","Xi","r_i (m-1)"].join("\t");
+    const lines = gen.rows.map(r => [
+      r.i, r.prev, r.opText, r.opNoMod, r.m, r.xi, ui(r.xi, r.m, showDecimals)
+    ].join("\t"));
+    const seed = `0\t—\t(semilla)\t—\t${gen.m}\t${gen.raw[0]}\t${ui(gen.raw[0], gen.m, showDecimals)}`;
+    const tsv = [header, seed, ...lines].join("\n");
+    navigator.clipboard.writeText(tsv);
+  };
+
+  const clearAll = () => {
+    setFields({ k:"", g:"", m:"", p:"", seed:"", decimals:"" });
+    setFormulaA(0);
+    setModeM(0);
+  };
+
+  /** ---------- Render ---------- */
+  return (
+    <div style={{ maxWidth: 1120, margin: "0 auto", padding: 12 }}>
+      {/* Encabezado */}
+      <header style={{ marginBottom: 12 }}>
+        <h2 style={{ margin: 0 }}>
+          Generador Congruencial Lineal — <span style={{ fontWeight: 400 }}>MULTIPLICATIVO (c = 0)</span>
+        </h2>
+        <div style={{ fontSize: 13, opacity: .85, marginTop: 6 }}>
+          Sigue los pasos de izquierda a derecha. Resultados abajo en tiempo real.
+          {badge("rᵢ = Xᵢ / (m − 1)")}
+          {badge("m = 2^g")}
+          {badge("a = 8k + 3 ó 8k + 5")}
+          {badge("seed impar")}
+        </div>
+      </header>
+
+      {/* Paso 1: a mediante k (dos fórmulas) */}
+      <Section
+        title="1) Multiplicador a"
+        subtitle="Elige la fórmula de a y escribe k (a = 8k + 3 ó a = 8k + 5)."
+        right={
+          <div style={{ display: "flex", gap: 8 }}>
+            <Pill active={formulaA === 0} onClick={() => setFormulaA(0)}>a = 8k + 3</Pill>
+            <Pill active={formulaA === 1} onClick={() => setFormulaA(1)}>a = 8k + 5</Pill>
+          </div>
+        }
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+          <Control
+            label="k (entero > 0)"
+            name="k"
+            type="text"
+            inputMode="numeric"
+            pattern="\d*"
+            placeholder="Ej.: 3"
+            value={fields.k}
+            onChange={onField}
+            hint="Calculamos a automáticamente según la fórmula elegida."
+            after={badge(`a = ${
+              fields.k && isDigits(fields.k) && Number(fields.k) > 0
+                ? (formulaA === 0 ? 8 * Number(fields.k) + 3 : 8 * Number(fields.k) + 5)
+                : "?"
+            }`)}
+          />
+          <div />
+          <div />
+        </div>
+      </Section>
+
+      {/* Paso 2: m por g / m directo / p */}
+      <Section
+        title="2) Módulo m"
+        subtitle="Define m usando g (m = 2^g), m directo, o p (potencia de 2)."
+        right={
+          <div style={{ display: "flex", gap: 8 }}>
+            <Pill active={modeM === 0} onClick={() => setModeM(0)}>Con g</Pill>
+            <Pill active={modeM === 1} onClick={() => setModeM(1)}>m directo</Pill>
+            <Pill active={modeM === 2} onClick={() => setModeM(2)}>Con p</Pill>
+          </div>
+        }
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+          {modeM === 0 && (
+            <Control
+              label="g (entero 2–31)"
+              name="g"
+              type="text"
+              inputMode="numeric"
+              pattern="\d*"
+              placeholder="Ej.: 4 → m = 16"
+              value={fields.g}
+              onChange={onField}
+              hint="m = 2^g"
+              after={badge(`m = ${fields.g && isDigits(fields.g) ? 2 ** Number(fields.g) : "?"}`)}
+            />
+          )}
+
+          {modeM === 1 && (
+            <Control
+              label="m (potencia de 2)"
+              name="m"
+              type="text"
+              inputMode="numeric"
+              pattern="\d*"
+              placeholder="Ej.: 16, 32, 64…"
+              value={fields.m}
+              onChange={onField}
+              hint="Si m es potencia de 2, g = log₂(m)."
+              after={badge(`g = ${
+                fields.m && isDigits(fields.m) && isPowerOfTwo(Number(fields.m))
+                  ? Math.log2(Number(fields.m))
+                  : "?"
+              }`)}
+            />
+          )}
+
+          {modeM === 2 && (
+            <Control
+              label="p (potencia de 2)"
+              name="p"
+              type="text"
+              inputMode="numeric"
+              pattern="\d*"
+              placeholder="Ej.: 16"
+              value={fields.p}
+              onChange={onField}
+              hint="Calculamos g = ln(p)/ln(2) y luego m = 2^g."
+              after={
+                <>
+                  {badge(`g = ${
+                    fields.p && isDigits(fields.p) && isPowerOfTwo(Number(fields.p))
+                      ? Math.round(Math.log(Number(fields.p))/Math.log(2))
+                      : "?"
+                  }`)}
+                  {badge(`m = ${
+                    fields.p && isDigits(fields.p) && isPowerOfTwo(Number(fields.p))
+                      ? Number(fields.p)
+                      : "?"
+                  }`)}
+                </>
+              }
+            />
+          )}
+        </div>
+
+        <div style={{ marginTop: 8, fontSize: 14 }}>
+          <strong>Vista previa:</strong>{" "}
+          a = <b>{Number.isFinite(derived.a) ? derived.a : "—"}</b> ·{" "}
+          m = <b>{Number.isFinite(derived.m) ? derived.m : "—"}</b> ·{" "}
+          g = <b>{Number.isFinite(derived.g) ? derived.g : "—"}</b>
+        </div>
+      </Section>
+
+      {/* Paso 3: seed impar y decimales */}
+      <Section
+        title="3) Semilla y formato"
+        subtitle="Semilla X₀ en [1, m−1], IMPAR cuando m = 2^g. Decimales para rᵢ opcional."
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+          <Control
+            label="Semilla X₀ (impar)"
+            name="seed"
+            type="text"
+            inputMode="numeric"
+            pattern="\d*"
+            placeholder="Ej.: 5"
+            value={fields.seed}
+            onChange={onField}
+            hint="Para m = 2^g, usa X₀ impar (y ≠ 0)."
+          />
+          <Control
+            label="Decimales para rᵢ"
+            name="decimals"
+            type="text"
+            inputMode="numeric"
+            pattern="\d*"
+            placeholder="Ej.: 4"
+            value={fields.decimals}
+            onChange={onField}
+            hint="rᵢ = Xᵢ / (m − 1)"
+          />
+          <div />
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <Button tone="primary" type="button" onClick={() => { /* generación es en vivo */ }}>
+            Generar (en vivo)
+          </Button>
+          <Button type="button" onClick={clearAll}>Limpiar</Button>
+          <Button type="button" onClick={copyTable} disabled={!gen}>Copiar tabla</Button>
+        </div>
+      </Section>
+
+      {/* Hints / Errores */}
       {derived.hints.length > 0 && derived.errors.length === 0 && (
-        <div className="alert" style={{ marginTop: 12, color: "#8a6d3b" }}>
-          <strong>Tips de período:</strong>
+        <div style={{
+          border: "1px solid #fde68a",
+          background: "#fffbeb",
+          color: "#92400e",
+          borderRadius: 12,
+          padding: 10,
+          marginTop: 8
+        }}>
+          <strong>Tips de período (m = 2^g):</strong>
           {derived.hints.map((h, i) => <div key={i}>• {h}</div>)}
+        </div>
+      )}
+
+      {derived.errors.length > 0 && (
+        <div style={{
+          border: "1px solid #fecaca",
+          background: "#fef2f2",
+          color: "#991b1b",
+          borderRadius: 12,
+          padding: 10,
+          marginTop: 8
+        }}>
+          <strong>Revisa los campos:</strong>
+          {derived.errors.map((er, i) => <div key={i}>• {er}</div>)}
         </div>
       )}
 
       {/* Resultados */}
       {gen && (
-        <>
-          <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+        <Section
+          title="Resultados"
+          subtitle="Secuencia Xᵢ, normalizados rᵢ = Xᵢ/(m−1) y tabla paso a paso."
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <div>
-              <h4>Valores crudos (Xi), incluyendo X₀</h4>
-              <ol>{gen.raw.map((v, i) => <li key={i}>{v}</li>)}</ol>
+              <h4 style={{ marginTop: 0 }}>Valores crudos (Xᵢ), incluyendo X₀</h4>
+              <ol style={{ paddingLeft: 20 }}>
+                {gen.raw.map((v, i) => <li key={i}>{v}</li>)}
+              </ol>
             </div>
             <div>
-              <h4>Normalizados (rᵢ = Xᵢ / (m-1)), con {showDecimals} decimales</h4>
-              <ol>{gen.raw.map((x, i) => <li key={i}>{ui(x, gen.m, showDecimals)}</li>)}</ol>
+              <h4 style={{ marginTop: 0 }}>Normalizados (rᵢ = Xᵢ / (m − 1)), con {showDecimals} decimales</h4>
+              <ol style={{ paddingLeft: 20 }}>
+                {gen.raw.map((x, i) => <li key={i}>{ui(x, gen.m, showDecimals)}</li>)}
+              </ol>
             </div>
           </div>
 
-          {/* Tabla detallada */}
-          <div style={{ marginTop: 24 }}>
-            <h4>Tabla de iteraciones (detalle de operación)</h4>
-            <p style={{ marginTop: 4, fontSize: 14 }}>
-              <strong>Nota:</strong> i=0 es la semilla X₀; i≥1 muestra la operación.
-              Cambia <em>k</em>, la <em>fórmula de a</em> y <em>g/m/p</em> para ver cambios en vivo.
-            </p>
+          <div style={{ marginTop: 18 }}>
+            <h4 style={{ marginTop: 0 }}>Tabla de iteraciones</h4>
+            <div style={{ fontSize: 13, opacity: .8, marginBottom: 6 }}>
+              i=0 es la semilla X₀; i≥1 aplica Xᵢ = (a·Xᵢ₋₁) mod m.
+            </div>
 
-            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   <th style={th}>i</th>
-                  <th style={th}>Xi-1</th>
-                  <th style={th}>Operación (texto)</th>
-                  <th style={th}>a·Xi-1 (sin módulo)</th>
+                  <th style={th}>Xᵢ₋₁ (entrada)</th>
+                  <th style={th}>Operación</th>
+                  <th style={th}>a·Xᵢ₋₁ (sin módulo)</th>
                   <th style={th}>m</th>
-                  <th style={th}>Xi = (…) mod m</th>
-                  <th style={th}>rᵢ = Xi / (m-1) (dec={showDecimals})</th>
-                  <th style={th}>Explicación</th>
+                  <th style={th}>Xᵢ</th>
+                  <th style={th}>rᵢ = Xᵢ/(m−1)</th>
+                  <th style={th}>Nota</th>
                 </tr>
               </thead>
               <tbody>
@@ -326,9 +531,8 @@ export default function LcgMultiplicativo() {
                   <td style={td}>{gen.m}</td>
                   <td style={td}>{gen.raw[0]}</td>
                   <td style={td}>{ui(gen.raw[0], gen.m, showDecimals)}</td>
-                  <td style={td}>Valor inicial X₀ (impar).</td>
+                  <td style={td}>Valor inicial X₀.</td>
                 </tr>
-
                 {gen.rows.map((r) => (
                   <tr key={r.i}>
                     <td style={td}>{r.i}</td>
@@ -344,7 +548,7 @@ export default function LcgMultiplicativo() {
               </tbody>
             </table>
 
-            <div style={{ marginTop: 12, fontSize: 14 }}>
+            <div style={{ marginTop: 10, fontSize: 14 }}>
               <strong>Resumen:</strong>{" "}
               período detectado = <b>{gen.period}</b>
               {" · "}m = {gen.m}
@@ -352,23 +556,23 @@ export default function LcgMultiplicativo() {
               {" · "}r<sub>max</sub> = {Math.max(...gen.raw.map(x => x / (gen.m - 1))).toFixed(showDecimals)}
             </div>
           </div>
-        </>
+        </Section>
       )}
-    </section>
+    </div>
   );
 }
 
 /** -------------------- Estilos de tabla -------------------- */
 const th = {
   textAlign: "left",
-  borderBottom: "1px solid #ccc",
-  padding: "8px 6px",
-  background: "#f8f8f8",
-  fontWeight: 600,
-  fontSize: 14
+  borderBottom: "1px solid #e5e7eb",
+  padding: "10px 8px",
+  background: "#f9fafb",
+  fontWeight: 700,
+  fontSize: 13
 };
 const td = {
-  borderBottom: "1px solid #eee",
-  padding: "8px 6px",
-  fontSize: 14
+  borderBottom: "1px solid #f1f5f9",
+  padding: "10px 8px",
+  fontSize: 13
 };
