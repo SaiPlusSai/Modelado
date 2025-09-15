@@ -173,95 +173,105 @@ export default function LcgMultiplicativo() {
 
   const showDecimals = Number.isFinite(derived.decimals) ? derived.decimals : 0;
 
-  /** ---------- Helpers UI (mismo diseño que el aditivo) ---------- */
-  const badge = (text) => (
-    <span style={{
-      display: "inline-block",
-      padding: "2px 8px",
-      borderRadius: 999,
-      fontSize: 12,
-      background: "#f3f4f6",
-      border: "1px solid #e5e7eb",
-      marginLeft: 6
-    }}>{text}</span>
-  );
+ /** ---------- Helpers UI (mismo diseño, paleta negra) ---------- */
+const badge = (text) => (
+  <span style={{
+    display: "inline-block",
+    padding: "2px 8px",
+    borderRadius: 999,
+    fontSize: 12,
+    background: "#0f1115",
+    border: "1px solid #23262d",
+    color: "#e5e7eb",
+    marginLeft: 6
+  }}>{text}</span>
+);
 
-  const Section = ({ title, subtitle, children, right }) => (
-    <section style={{
-      border: "1px solid #eee",
-      borderRadius: 14,
-      padding: 14,
-      background: "#fff",
-      boxShadow: "0 1px 2px rgba(0,0,0,.04)",
-      marginBottom: 12
-    }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-        <h4 style={{ margin: 0, fontSize: 16 }}>{title}</h4>
-        {right}
-      </div>
-      {subtitle && <div style={{ fontSize: 13, opacity: .8, marginTop: 4 }}>{subtitle}</div>}
-      <div style={{ marginTop: 10 }}>{children}</div>
-    </section>
-  );
+const Section = ({ title, subtitle, children, right }) => (
+  <section style={{
+    border: "1px solid #1f2430",
+    borderRadius: 14,
+    padding: 14,
+    background: "#111317",
+    boxShadow: "0 2px 10px rgba(0,0,0,.35)",
+    marginBottom: 12,
+    color: "#f5f6f8"
+  }}>
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+      <h4 style={{ margin: 0, fontSize: 16, color: "#ffffff" }}>{title}</h4>
+      {right}
+    </div>
+    {subtitle && <div style={{ fontSize: 13, color: "#9aa1ac", marginTop: 4 }}>{subtitle}</div>}
+    <div style={{ marginTop: 10 }}>{children}</div>
+  </section>
+);
 
-  const Control = ({ label, hint, after, ...rest }) => (
-    <label style={{ display: "block" }}>
-      <div style={{ fontWeight: 600, marginBottom: 6 }}>{label}</div>
-      <input
-        {...rest}
-        style={{
-          width: "100%",
-          border: "1px solid #e5e7eb",
-          borderRadius: 10,
-          padding: "10px 12px",
-          outline: "none"
-        }}
-      />
-      {(hint || after) && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-          {hint && <div style={{ fontSize: 12, opacity: .8 }}>{hint}</div>}
-          {after}
-        </div>
-      )}
-    </label>
-  );
-
-  const Pill = ({ active, children, onClick }) => (
-    <button
-      type="button"
-      onClick={onClick}
+const Control = ({ label, hint, after, ...rest }) => (
+  <label style={{ display: "block", color: "#f5f6f8" }}>
+    <div style={{ fontWeight: 600, marginBottom: 6 }}>{label}</div>
+    <input
+      {...rest}
       style={{
-        padding: "8px 12px",
-        borderRadius: 999,
-        border: `1px solid ${active ? "#111827" : "#e5e7eb"}`,
-        background: active ? "#111827" : "#fff",
-        color: active ? "#fff" : "#111827",
-        cursor: "pointer",
-        fontSize: 13
-      }}
-    >
-      {children}
-    </button>
-  );
-
-  const Button = ({ children, tone="default", ...props }) => (
-    <button
-      {...props}
-      style={{
-        padding: "10px 14px",
+        width: "100%",
+        background: "#0c0e12",
+        color: "#e7e9ee",
+        border: "1px solid #2a2f3a",
         borderRadius: 10,
-        border: "1px solid transparent",
-        cursor: "pointer",
-        fontWeight: 600,
-        background: tone === "primary" ? "#111827" : "#fff",
-        color: tone === "primary" ? "#fff" : "#111827",
-        boxShadow: tone === "primary" ? "0 1px 2px rgba(0,0,0,.12)" : "none"
+        padding: "10px 12px",
+        outline: "none",
+        boxShadow: "0 1px 0 rgba(0,0,0,.2)"
       }}
-    >
-      {children}
-    </button>
-  );
+    />
+    {(hint || after) && (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+        {hint && <div style={{ fontSize: 12, color: "#9aa1ac" }}>{hint}</div>}
+        {after}
+      </div>
+    )}
+  </label>
+);
 
+const Pill = ({ active, children, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    style={{
+      padding: "8px 12px",
+      borderRadius: 999,
+      border: `1px solid ${active ? "#000000" : "#2a2f3a"}`,
+      background: active ? "#000000" : "transparent",
+      color: active ? "#ffffff" : "#f5f6f8",
+      cursor: "pointer",
+      fontSize: 13
+    }}
+  >
+    {children}
+  </button>
+);
+
+const Button = ({ children, tone="default", ...props }) => (
+  <button
+    {...props}
+    style={{
+      padding: "10px 14px",
+      borderRadius: 10,
+      border: tone === "primary" ? "1px solid transparent" : "1px solid #2a2f3a",
+      cursor: "pointer",
+      fontWeight: 700,
+      background: tone === "primary" ? "#000000" : "transparent",
+      color: tone === "primary" ? "#ffffff" : "#e7e9ee",
+      boxShadow: tone === "primary" ? "0 2px 8px rgba(0,0,0,.45)" : "none"
+    }}
+    onMouseOver={(e) => {
+      if (tone === "primary") e.currentTarget.style.background = "#0a0a0a";
+    }}
+    onMouseOut={(e) => {
+      if (tone === "primary") e.currentTarget.style.background = "#000000";
+    }}
+  >
+    {children}
+  </button>
+);
   const copyTable = () => {
     if (!gen) return;
     const header = ["i","Xi-1","Operación","a·Xi-1 (sin módulo)","m","Xi","r_i (m-1)"].join("\t");
@@ -562,17 +572,19 @@ export default function LcgMultiplicativo() {
   );
 }
 
-/** -------------------- Estilos de tabla -------------------- */
+/** ---------- Estilos de tabla (oscuro) ---------- */
 const th = {
   textAlign: "left",
-  borderBottom: "1px solid #e5e7eb",
+  borderBottom: "1px solid #2a2f3a",
   padding: "10px 8px",
-  background: "#f9fafb",
+  background: "#0c0e12",
   fontWeight: 700,
-  fontSize: 13
+  fontSize: 13,
+  color: "#f5f6f8"
 };
 const td = {
-  borderBottom: "1px solid #f1f5f9",
+  borderBottom: "1px solid #1f2430",
   padding: "10px 8px",
-  fontSize: 13
+  fontSize: 13,
+  color: "#e7e9ee"
 };
