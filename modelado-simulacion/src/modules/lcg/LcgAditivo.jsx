@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 
 /** -------------------- Utils -------------------- */
 const isInt = (v) => Number.isInteger(v);
@@ -48,42 +48,22 @@ function generateFullPeriodAditivo({ a, c, m, seed }) {
   return { raw, rows, period, m };
 }
 
-/** -------------------- Input numérico con buffer -------------------- */
-/* Mantiene texto local mientras tipeás y solo “confirma” al hacer blur o Enter.
-   Así evitamos que un re-render te quite el foco. */
-function BufferedNumericInput({
-  name,
-  value,                // string del estado global
-  onCommit,             // (str) => void  -> actualiza el estado global
-  allowEmpty = true,
-  ...rest
-}) {
-  const [text, setText] = useState(value ?? "");
+/** -------------------- Input numérico “amigable” -------------------- */
+function NumericInput({ value, onChange, ...rest }) {
   const ref = useRef(null);
 
-  // Sincroniza si el valor externo cambia desde fuera (ej. limpiar formulario)
-  useEffect(() => {
-    if (value !== text) setText(value ?? "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
-
-  // bloquea rueda del mouse (evita cambios raros)
+  // Evita que la rueda del mouse cambie el valor y provoque blur
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const onWheel = (e) => {
-      if (document.activeElement === el) e.preventDefault();
+      if (document.activeElement === el) {
+        e.preventDefault();
+      }
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
-
-  const commit = () => {
-    // si allowEmpty y está vacío, confirmamos vacío; si no, confirmamos números
-    if (text === "" && allowEmpty) return onCommit("");
-    if (/^[0-9]+$/.test(text)) return onCommit(text);
-    // si metió algo no numérico, no confirmamos (mantiene foco)
-  };
 
   return (
     <input
@@ -94,31 +74,21 @@ function BufferedNumericInput({
       autoComplete="off"
       autoCorrect="off"
       spellCheck={false}
-      name={name}
-      value={text}
+      value={value}
       onChange={(e) => {
+        // permitimos vacío o sólo dígitos
         const v = e.target.value;
-        // Permitimos vacío o solo dígitos (no forzamos commit aún)
-        if (v === "" || /^[0-9]+$/.test(v)) setText(v);
+        if (v === "" || /^[0-9]+$/.test(v)) {
+          onChange(e);
+        }
       }}
-      onBlur={commit}
       onKeyDown={(e) => {
+        // Evitar que Enter dispare alguna submit implícita o cambie el foco
         if (e.key === "Enter") {
           e.preventDefault();
-          commit();
-          // mantener foco tras enter
-          setTimeout(() => ref.current?.focus(), 0);
         }
       }}
       {...rest}
-      style={{
-        width: "100%",
-        border: "1px solid #e5e7eb",
-        borderRadius: 10,
-        padding: "10px 12px",
-        outline: "none",
-        ...(rest.style || {})
-      }}
     />
   );
 }
@@ -140,8 +110,10 @@ export default function LcgAditivo() {
     decimals: ""
   });
 
-  const commitField = (name, val) =>
-    setFields((p) => ({ ...p, [name]: val }));
+  const onField = (e) => {
+    const { name, value } = e.target;
+    setFields((p) => ({ ...p, [name]: value }));
+  };
 
   /** ---------- Derivados + validaciones (manteniendo reglas, seed > 0) ---------- */
   const derived = useMemo(() => {
@@ -248,6 +220,7 @@ export default function LcgAditivo() {
       setGen(next);
       setLastGoodGen(next);
     } else {
+      // mantenemos el último bueno visible (no perdés la tabla mientras tipeás)
       setGen(null);
     }
   }, [derived]);
@@ -287,13 +260,12 @@ const Section = ({ title, subtitle, children, right }) => (
   </section>
 );
 
-const Control = ({ label, hint, after, name, value, onCommit, ...rest }) => (
+const Control = ({ label, hint, after, value, onChange, ...rest }) => (
   <label style={{ display: "block", color: "#f5f6f8" }}>
     <div style={{ fontWeight: 600, marginBottom: 6 }}>{label}</div>
-    <BufferedNumericInput
-      name={name}
+    <NumericInput
       value={value}
-      onCommit={(v) => onCommit(name, v)}
+      onChange={onChange}
       {...rest}
       style={{
         width: "100%",
@@ -407,7 +379,7 @@ const Button = ({ children, tone="default", ...props }) => (
               name="a"
               placeholder="Ej.: 13"
               value={fields.a}
-              onCommit={commitField}
+              onChange={onField}
               hint="Escribe el valor de a directamente."
             />
           ) : (
@@ -417,7 +389,7 @@ const Button = ({ children, tone="default", ...props }) => (
                 name="k"
                 placeholder="Ej.: 3"
                 value={fields.k}
-                onCommit={commitField}
+                onChange={onField}
                 hint="Usamos a = 1 + 4k."
                 after={badge(`a = ${fields.k && isInt(Number(fields.k)) && Number(fields.k)>0 ? 1+4*Number(fields.k) : "?"}`)}
               />
@@ -447,7 +419,7 @@ const Button = ({ children, tone="default", ...props }) => (
               name="g"
               placeholder="Ej.: 4 → m = 16"
               value={fields.g}
-              onCommit={commitField}
+              onChange={onField}
               hint="m = 2^g"
               after={badge(`m = ${fields.g && isInt(Number(fields.g)) ? 2 ** Number(fields.g) : "?"}`)}
             />
@@ -459,7 +431,7 @@ const Button = ({ children, tone="default", ...props }) => (
               name="m"
               placeholder="Ej.: 16, 32, 64…"
               value={fields.m}
-              onCommit={commitField}
+              onChange={onField}
               hint="Si m es potencia de 2, g = log₂(m)."
               after={badge(`g = ${fields.m && isInt(Number(fields.m)) && isPowerOfTwo(Number(fields.m)) ? Math.log2(Number(fields.m)) : "?"}`)}
             />
@@ -471,7 +443,7 @@ const Button = ({ children, tone="default", ...props }) => (
               name="p"
               placeholder="Ej.: 16"
               value={fields.p}
-              onCommit={commitField}
+              onChange={onField}
               hint="Calculamos g = ln(p)/ln(2) y luego m = 2^g."
               after={
                 <>
@@ -502,7 +474,7 @@ const Button = ({ children, tone="default", ...props }) => (
             name="c"
             placeholder="Ej.: 7"
             value={fields.c}
-            onCommit={commitField}
+            onChange={onField}
             hint="Para buen periodo: gcd(c, m) = 1."
           />
           <Control
@@ -510,7 +482,7 @@ const Button = ({ children, tone="default", ...props }) => (
             name="seed"
             placeholder="Ej.: 5, 12, 123456…"
             value={fields.seed}
-            onCommit={commitField}
+            onChange={onField}
             hint="Cualquier entero > 0."
           />
           <Control
@@ -518,7 +490,7 @@ const Button = ({ children, tone="default", ...props }) => (
             name="decimals"
             placeholder="Ej.: 4"
             value={fields.decimals}
-            onCommit={commitField}
+            onChange={onField}
             hint="rᵢ = Xᵢ / (m − 1)"
           />
         </div>
@@ -563,84 +535,81 @@ const Button = ({ children, tone="default", ...props }) => (
       )}
 
       {/* Resultados (si hay algo válido, mostramos el último bueno) */}
-      {(gen ?? lastGoodGen) && (() => {
-        const gShown = gen ?? lastGoodGen;
-        return (
-          <Section
-            title="Resultados"
-            subtitle="Debajo verás la secuencia cruda Xᵢ, los normalizados rᵢ = Xᵢ/(m−1) y la tabla paso a paso."
-          >
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div>
-                <h4 style={{ marginTop: 0 }}>Valores crudos (Xᵢ), incluyendo X₀</h4>
-                <ol style={{ paddingLeft: 20 }}>
-                  {gShown.raw.map((v, i) => <li key={i}>{v}</li>)}
-                </ol>
-              </div>
-              <div>
-                <h4 style={{ marginTop: 0 }}>Normalizados (rᵢ = Xᵢ / (m − 1)), con {showDecimals} decimales</h4>
-                <ol style={{ paddingLeft: 20 }}>
-                  {gShown.raw.map((x, i) => <li key={i}>{ui(x, gShown.m, showDecimals)}</li>)}
-                </ol>
-              </div>
+      {gShown && (
+        <Section
+          title="Resultados"
+          subtitle="Debajo verás la secuencia cruda Xᵢ, los normalizados rᵢ = Xᵢ/(m−1) y la tabla paso a paso."
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div>
+              <h4 style={{ marginTop: 0 }}>Valores crudos (Xᵢ), incluyendo X₀</h4>
+              <ol style={{ paddingLeft: 20 }}>
+                {gShown.raw.map((v, i) => <li key={i}>{v}</li>)}
+              </ol>
+            </div>
+            <div>
+              <h4 style={{ marginTop: 0 }}>Normalizados (rᵢ = Xᵢ / (m − 1)), con {showDecimals} decimales</h4>
+              <ol style={{ paddingLeft: 20 }}>
+                {gShown.raw.map((x, i) => <li key={i}>{ui(x, gShown.m, showDecimals)}</li>)}
+              </ol>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 18 }}>
+            <h4 style={{ marginTop: 0 }}>Tabla de iteraciones</h4>
+            <div style={{ fontSize: 13, opacity: .8, marginBottom: 6 }}>
+              i=0 es la semilla X₀; i≥1 aplica Xᵢ = (a·Xᵢ₋₁ + c) mod m.
             </div>
 
-            <div style={{ marginTop: 18 }}>
-              <h4 style={{ marginTop: 0 }}>Tabla de iteraciones</h4>
-              <div style={{ fontSize: 13, opacity: .8, marginBottom: 6 }}>
-                i=0 es la semilla X₀; i≥1 aplica Xᵢ = (a·Xᵢ₋₁ + c) mod m.
-              </div>
-
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th style={th}>i</th>
-                    <th style={th}>Xᵢ₋₁ (entrada)</th>
-                    <th style={th}>Operación</th>
-                    <th style={th}>a·Xᵢ₋₁ + c (sin módulo)</th>
-                    <th style={th}>m</th>
-                    <th style={th}>Xᵢ</th>
-                    <th style={th}>rᵢ = Xᵢ/(m−1)</th>
-                    <th style={th}>Nota</th>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={th}>i</th>
+                  <th style={th}>Xᵢ₋₁ (entrada)</th>
+                  <th style={th}>Operación</th>
+                  <th style={th}>a·Xᵢ₋₁ + c (sin módulo)</th>
+                  <th style={th}>m</th>
+                  <th style={th}>Xᵢ</th>
+                  <th style={th}>rᵢ = Xᵢ/(m−1)</th>
+                  <th style={th}>Nota</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={td}>0</td>
+                  <td style={td}>—</td>
+                  <td style={td}>(semilla)</td>
+                  <td style={td}>—</td>
+                  <td style={td}>{gShown.m}</td>
+                  <td style={td}>{gShown.raw[0]}</td>
+                  <td style={td}>{ui(gShown.raw[0], gShown.m, showDecimals)}</td>
+                  <td style={td}>Valor inicial X₀.</td>
+                </tr>
+                {gShown.rows.map((r) => (
+                  <tr key={r.i}>
+                    <td style={td}>{r.i}</td>
+                    <td style={td}>{r.prev}</td>
+                    <td style={td}>{r.opText}</td>
+                    <td style={td}>{r.opNoMod}</td>
+                    <td style={td}>{r.m}</td>
+                    <td style={td}>{r.xi}</td>
+                    <td style={td}>{ui(r.xi, r.m, showDecimals)}</td>
+                    <td style={td}>{r.explanation}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td style={td}>0</td>
-                    <td style={td}>—</td>
-                    <td style={td}>(semilla)</td>
-                    <td style={td}>—</td>
-                    <td style={td}>{gShown.m}</td>
-                    <td style={td}>{gShown.raw[0]}</td>
-                    <td style={td}>{ui(gShown.raw[0], gShown.m, showDecimals)}</td>
-                    <td style={td}>Valor inicial X₀.</td>
-                  </tr>
-                  {gShown.rows.map((r) => (
-                    <tr key={r.i}>
-                      <td style={td}>{r.i}</td>
-                      <td style={td}>{r.prev}</td>
-                      <td style={td}>{r.opText}</td>
-                      <td style={td}>{r.opNoMod}</td>
-                      <td style={td}>{r.m}</td>
-                      <td style={td}>{r.xi}</td>
-                      <td style={td}>{ui(r.xi, r.m, showDecimals)}</td>
-                      <td style={td}>{r.explanation}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                ))}
+              </tbody>
+            </table>
 
-              <div style={{ marginTop: 10, fontSize: 14 }}>
-                <strong>Resumen:</strong>{" "}
-                período detectado = <b>{gShown.period}</b>
-                {" · "}m = {gShown.m}
-                {" · "}r<sub>min</sub> = {Math.min(...gShown.raw.map(x => x / (gShown.m - 1))).toFixed(showDecimals)}
-                {" · "}r<sub>max</sub> = {Math.max(...gShown.raw.map(x => x / (gShown.m - 1))).toFixed(showDecimals)}
-              </div>
+            <div style={{ marginTop: 10, fontSize: 14 }}>
+              <strong>Resumen:</strong>{" "}
+              período detectado = <b>{gShown.period}</b>
+              {" · "}m = {gShown.m}
+              {" · "}r<sub>min</sub> = {Math.min(...gShown.raw.map(x => x / (gShown.m - 1))).toFixed(showDecimals)}
+              {" · "}r<sub>max</sub> = {Math.max(...gShown.raw.map(x => x / (gShown.m - 1))).toFixed(showDecimals)}
             </div>
-          </Section>
-        );
-      })()}
+          </div>
+        </Section>
+      )}
     </div>
   );
 }
